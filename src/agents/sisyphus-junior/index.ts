@@ -10,5 +10,6 @@ export {
   getSisyphusJuniorPromptSource,
   buildSisyphusJuniorPrompt,
   createSisyphusJuniorAgentWithOverrides,
+  sisyphusJuniorPromptMetadata,
 } from "./agent"
 export type { SisyphusJuniorPromptSource } from "./agent"

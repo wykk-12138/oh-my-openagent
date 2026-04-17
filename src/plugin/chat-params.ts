@@ -1,5 +1,6 @@
+import type { OhMyOpenCodeConfig } from "../config"
+import { getModelCapabilities, resolveCompatibleModelSettings, applyAgentVariant, log } from "../shared"
 import { getSessionPromptParams } from "../shared/session-prompt-params-state"
-import { getModelCapabilities, resolveCompatibleModelSettings } from "../shared"
 
 export type ChatParamsInput = {
   sessionID: string
@@ -81,12 +82,25 @@ function isChatParamsOutput(raw: unknown): raw is ChatParamsOutput {
 
 export function createChatParamsHandler(args: {
   anthropicEffort: { "chat.params"?: (input: ChatParamsHookInput, output: ChatParamsOutput) => Promise<void> } | null
+  pluginConfig: OhMyOpenCodeConfig
   client?: unknown
 }): (input: unknown, output: unknown) => Promise<void> {
   return async (input, output): Promise<void> => {
     const normalizedInput = buildChatParamsInput(input)
     if (!normalizedInput) return
     if (!isChatParamsOutput(output)) return
+
+    const initialVariant = normalizedInput.message.variant
+    applyAgentVariant(args.pluginConfig, normalizedInput.agent.name, normalizedInput.message)
+    if (initialVariant !== normalizedInput.message.variant && normalizedInput.message.variant !== undefined) {
+      log("chat-params: injected agent variant", {
+        sessionID: normalizedInput.sessionID,
+        agent: normalizedInput.agent.name,
+        provider: normalizedInput.model.providerID,
+        model: normalizedInput.model.modelID,
+        variant: normalizedInput.message.variant,
+      })
+    }
 
     const storedPromptParams = getSessionPromptParams(normalizedInput.sessionID)
     if (storedPromptParams) {
@@ -137,6 +151,19 @@ export function createChatParamsHandler(args: {
         delete normalizedInput.rawMessage.variant
       }
     }
+
+    if (initialVariant !== compatibility.variant && compatibility.variant !== undefined) {
+      log("chat-params: resolved compatible variant", {
+        sessionID: normalizedInput.sessionID,
+        agent: normalizedInput.agent.name,
+        provider: normalizedInput.model.providerID,
+        model: normalizedInput.model.modelID,
+        fromVariant: initialVariant,
+        toVariant: compatibility.variant,
+        changes: compatibility.changes,
+      })
+    }
+
     normalizedInput.message = normalizedInput.rawMessage as { variant?: string }
 
     if (compatibility.reasoningEffort !== undefined) {
@@ -178,5 +205,18 @@ export function createChatParamsHandler(args: {
     }
 
     await args.anthropicEffort?.["chat.params"]?.(normalizedInput, output)
+
+    log("chat-params: final output options snapshot", {
+      sessionID: normalizedInput.sessionID,
+      agent: normalizedInput.agent.name,
+      provider: normalizedInput.model.providerID,
+      model: normalizedInput.model.modelID,
+      outputOptions: {
+        variant: normalizedInput.message.variant,
+        thinking: output.options.thinking,
+        effort: output.options.effort,
+        reasoningEffort: output.options.reasoningEffort,
+      },
+    })
   }
 }

@@ -208,7 +208,7 @@ export function buildParallelDelegationSection(
 **MANDATORY - for ANY implementation task:**
 
 1. **ALWAYS decompose** the task into independent work units. No exceptions. Even if the task "feels small", decompose it.
-2. **ALWAYS delegate** EACH unit to a \`deep\` or \`unspecified-high\` agent in parallel (\`run_in_background=true\`).
+2. **ALWAYS delegate** EACH code implementation unit to Hephaestus via \`task(subagent_type="hephaestus", ...)\`. Use \`deep\` or \`unspecified-high\` only as fallback when Hephaestus is unavailable or the work is not code implementation.
 3. **NEVER work sequentially.** If 4 independent units exist, spawn 4 agents simultaneously. Not 1 at a time. Not 2 then 2.
 4. **NEVER implement directly** when delegation is possible. You write prompts, not code.
 
@@ -222,9 +222,9 @@ export function buildParallelDelegationSection(
 
 | You Want To Do | You MUST Do Instead |
 |---|---|
-| Write code yourself | Delegate to \`deep\` or \`unspecified-high\` agent |
+| Write code yourself | Delegate to Hephaestus via \`task(subagent_type="hephaestus", ...)\` |
 | Handle 3 changes sequentially | Spawn 3 agents in parallel |
-| "Quickly fix this one thing" | Still delegate - your "quick fix" is slower and worse than a subagent's |
+| "Quickly fix this one thing" | Still delegate to Hephaestus - your "quick fix" is slower and worse than a subagent's |
 
 **Your value is orchestration, decomposition, and quality control. Delegating with crystal-clear prompts IS your work.**`
 }

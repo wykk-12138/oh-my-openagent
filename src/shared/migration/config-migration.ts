@@ -3,7 +3,6 @@ import { log } from "../logger"
 import { writeFileAtomically } from "../write-file-atomically"
 import { AGENT_NAME_MAP, migrateAgentNames } from "./agent-names"
 import { migrateHookNames } from "./hook-names"
-import { migrateModelVersions } from "./model-versions"
 import { readAppliedMigrations, writeAppliedMigrations } from "./migrations-sidecar"
 
 export function migrateConfigFile(
@@ -22,19 +21,13 @@ export function migrateConfigFile(
   // that still carry `_migrations` working without a forced reset.
   const sidecarMigrations = readAppliedMigrations(configPath)
   const inConfigMigrations = Array.isArray(copy._migrations)
-    ? new Set(copy._migrations.filter((migration): migration is string => typeof migration === "string"))
-    : new Set<string>()
-  const inlineAppliedMigrations = Array.isArray(copy.appliedMigrations)
-    ? new Set(copy.appliedMigrations.filter((migration): migration is string => typeof migration === "string"))
+    ? new Set(copy._migrations as string[])
     : new Set<string>()
   const existingMigrations = new Set<string>([
     ...sidecarMigrations,
     ...inConfigMigrations,
-    ...inlineAppliedMigrations,
   ])
   const hadLegacyInConfigMigrations = inConfigMigrations.size > 0
-  const hadInlineAppliedMigrations = inlineAppliedMigrations.size > 0
-  const allNewMigrations: string[] = []
 
   if (copy.agents && typeof copy.agents === "object") {
     const { migrated, changed } = migrateAgentNames(copy.agents as Record<string, unknown>)
@@ -44,59 +37,19 @@ export function migrateConfigFile(
     }
   }
 
-  // Migrate model versions in agents (skip already-applied migrations)
-  if (copy.agents && typeof copy.agents === "object") {
-    const { migrated, changed, newMigrations } = migrateModelVersions(
-      copy.agents as Record<string, unknown>,
-      existingMigrations
-    )
-    if (changed) {
-      copy.agents = migrated
-      needsWrite = true
-      log("Migrated model versions in agents config")
-    }
-    allNewMigrations.push(...newMigrations)
-  }
-
-  // Migrate model versions in categories (skip already-applied migrations)
-  if (copy.categories && typeof copy.categories === "object") {
-    const { migrated, changed, newMigrations } = migrateModelVersions(
-      copy.categories as Record<string, unknown>,
-      existingMigrations
-    )
-    if (changed) {
-      copy.categories = migrated
-      needsWrite = true
-      log("Migrated model versions in categories config")
-    }
-    allNewMigrations.push(...newMigrations)
-  }
-
-  // Record newly applied migrations. We persist the full set (existing +
-  // new) to the external sidecar file and strip the legacy `_migrations`
-  // field from the config body on its way out, so users stop having to
-  // think about a field that never should have been in their config in
-  // the first place. The in-memory `rawConfig` never re-exposes
-  // `_migrations` to downstream schema validation.
-  const newMigrationsToRecord = allNewMigrations.filter(mKey => !existingMigrations.has(mKey))
-  const fullMigrationSet = new Set<string>([
-    ...existingMigrations,
-    ...newMigrationsToRecord,
-  ])
-  const shouldWriteSidecar = newMigrationsToRecord.length > 0 || hadLegacyInConfigMigrations || hadInlineAppliedMigrations
-  if (newMigrationsToRecord.length > 0) {
-    needsWrite = true
-  }
-  if (hadLegacyInConfigMigrations || hadInlineAppliedMigrations) {
+  // Preserve the sidecar writing path for legacy `_migrations` fields.
+  // The model-version migration that originally populated this set has been
+  // removed to stop the plugin from overriding user-specified model choices,
+  // but we still need to strip legacy `_migrations` from the config body and
+  // persist it to the sidecar so existing installs don't loop on startup.
+  const fullMigrationSet = new Set<string>(existingMigrations)
+  const shouldWriteSidecar = hadLegacyInConfigMigrations
+  if (hadLegacyInConfigMigrations) {
     // Migrating state out of the config body is itself a config write.
-    delete copy.appliedMigrations
     needsWrite = true
-  }
-  if (shouldWriteSidecar) {
     // Keep `_migrations` in the first config write so a later sidecar failure
     // does not strand the config with migrated state missing from disk.
     ;(copy as Record<string, unknown>)._migrations = Array.from(fullMigrationSet)
-    needsWrite = true
   }
 
   if (copy.omo_agent) {

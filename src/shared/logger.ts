@@ -1,10 +1,9 @@
 import * as fs from "fs"
-import * as os from "os"
 import * as path from "path"
 
 import { LOG_FILENAME } from "./plugin-identity"
 
-const logFile = path.join(os.tmpdir(), LOG_FILENAME)
+const logFile = path.join("C:\\Users\\wykk\\Desktop\\project\\oh-my-openagent\\log", LOG_FILENAME)
 
 let buffer: string[] = []
 let flushTimer: ReturnType<typeof setTimeout> | null = null
@@ -16,6 +15,7 @@ function flush(): void {
   const data = buffer.join("")
   buffer = []
   try {
+    fs.mkdirSync(path.dirname(logFile), { recursive: true })
     fs.appendFileSync(logFile, data)
   } catch {
   }

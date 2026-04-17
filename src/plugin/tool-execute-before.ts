@@ -4,13 +4,18 @@ import { randomUUID } from "node:crypto"
 import { getMainSessionID } from "../features/claude-code-session-state"
 import { clearBoulderState } from "../features/boulder-state"
 import { log } from "../shared"
-import { stripInvisibleAgentCharacters } from "../shared/agent-display-names"
+import { getAgentConfigKey, getAgentRuntimeName, stripInvisibleAgentCharacters } from "../shared/agent-display-names"
 import { resolveSessionAgent } from "./session-agent-resolver"
 import { parseRalphLoopArguments } from "../hooks/ralph-loop/command-arguments"
 import { ULTRAWORK_VERIFICATION_PROMISE } from "../hooks/ralph-loop/constants"
 import { readState, writeState } from "../hooks/ralph-loop/storage"
 
 import type { CreatedHooks } from "../create-hooks"
+
+function isSisyphusAgent(agentName: string | undefined): boolean {
+  if (!agentName) return false
+  return getAgentConfigKey(stripInvisibleAgentCharacters(agentName)) === "sisyphus"
+}
 
 function getLoopCommandArguments(args: Record<string, unknown>, command: "ralph-loop" | "ulw-loop"): string {
   const rawUserMessage = typeof args.user_message === "string" ? args.user_message.trim() : ""
@@ -52,6 +57,13 @@ export function createToolExecuteBeforeHandler(args: {
   }
 
   return async (input, output): Promise<void> => {
+    const normalizedToolName = input.tool.toLowerCase()
+    let currentSessionAgent: string | undefined
+
+    if (input.sessionID && input.tool === "task") {
+      currentSessionAgent = await resolveSessionAgent(ctx.client, input.sessionID)
+    }
+
     if (input.tool.toLowerCase() === "bash" && typeof output.args.command === "string") {
       if (output.args.command.includes("\x00")) {
         output.args.command = output.args.command.replace(/\x00/g, "")
@@ -77,7 +89,6 @@ export function createToolExecuteBeforeHandler(args: {
     await hooks.sisyphusJuniorNotepad?.["tool.execute.before"]?.(input, output)
     await hooks.atlasHook?.["tool.execute.before"]?.(input, output)
 
-    const normalizedToolName = input.tool.toLowerCase()
     if (
       normalizedToolName === "question"
       || normalizedToolName === "ask_user_question"
@@ -109,8 +120,22 @@ export function createToolExecuteBeforeHandler(args: {
         argsObject.subagent_type = resolvedAgent ?? "continue"
       }
 
+      if (typeof argsObject.subagent_type === "string") {
+        const configKey = getAgentConfigKey(argsObject.subagent_type)
+        argsObject.subagent_type = getAgentRuntimeName(configKey)
+      }
+
+      if (isSisyphusAgent(currentSessionAgent) && typeof argsObject.subagent_type === "string") {
+        log("sisyphus delegation: agent", {
+          sessionID: input.sessionID,
+          callID: input.callID,
+          delegatedAgent: argsObject.subagent_type,
+          category,
+        })
+      }
+
       const normalizedSubagentType =
-        typeof argsObject.subagent_type === "string" ? stripInvisibleAgentCharacters(argsObject.subagent_type) : undefined
+        typeof argsObject.subagent_type === "string" ? getAgentConfigKey(argsObject.subagent_type) : undefined
       const prompt = typeof argsObject.prompt === "string" ? argsObject.prompt : ""
       const loopState = typeof ctx.directory === "string" ? readState(ctx.directory) : null
       const shouldInjectOracleVerification =

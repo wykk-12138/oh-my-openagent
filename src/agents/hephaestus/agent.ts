@@ -16,7 +16,7 @@ import { buildHephaestusPrompt as buildGpt53CodexPrompt } from "./gpt-5-3-codex"
 import { buildHephaestusPrompt as buildGpt54Prompt } from "./gpt-5-4";
 import { buildGpt55HephaestusPrompt as buildGpt55Prompt } from "./gpt-5-5";
 
-const MODE: AgentMode = "primary";
+const MODE: AgentMode = "subagent";
 
 export type HephaestusPromptSource = "gpt-5-5" | "gpt-5-4" | "gpt-5-3-codex" | "gpt";
 
@@ -154,6 +154,14 @@ export const hephaestusPromptMetadata: AgentPromptMetadata = {
   promptAlias: "Hephaestus",
   triggers: [
     {
+      domain: "Code implementation (PREFERRED)",
+      trigger: "FIRST CHOICE for all code implementation tasks. Always delegate to Hephaestus over doing it yourself.",
+    },
+    {
+      domain: "Post-plan implementation",
+      trigger: "After Prometheus/plan agent creates a plan, Hephaestus executes the implementation",
+    },
+    {
       domain: "Autonomous deep work",
       trigger: "End-to-end task completion without premature stopping",
     },
@@ -161,16 +169,24 @@ export const hephaestusPromptMetadata: AgentPromptMetadata = {
       domain: "Complex implementation",
       trigger: "Multi-step implementation requiring thorough exploration",
     },
+    {
+      domain: "Bug fixes and refactoring",
+      trigger: "Fixing bugs, refactoring code, adding features - any hands-on-code work",
+    },
   ],
   useWhen: [
+    "ANY code implementation task (write, edit, refactor, fix)",
+    "After plan agent produces a verified plan - Hephaestus executes it",
     "Task requires deep exploration before implementation",
     "User wants autonomous end-to-end completion",
     "Complex multi-file changes needed",
+    "Bug fixes, feature additions, code modifications",
   ],
   avoidWhen: [
-    "Simple single-step tasks",
+    "Simple single-step tasks that take < 1 minute (use category=quick instead)",
     "Tasks requiring user confirmation at each step",
     "When orchestration across multiple agents is needed (use Atlas)",
+    "Read-only research or architecture consultation (use Oracle)",
   ],
-  keyTrigger: "Complex implementation task requiring autonomous deep work",
+  keyTrigger: "ANY code implementation task - delegate to Hephaestus FIRST, do not code yourself",
 };

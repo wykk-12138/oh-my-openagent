@@ -11,7 +11,7 @@
  */
 
 import type { AgentConfig } from "@opencode-ai/sdk"
-import type { AgentMode } from "../types"
+import type { AgentMode, AgentPromptMetadata } from "../types"
 import { isGlmModel, isGpt5_5Model, isGptModel, isGeminiModel } from "../types"
 import type { AgentOverrideConfig } from "../../config/schema"
 import {
@@ -151,3 +151,30 @@ export function createSisyphusJuniorAgentWithOverrides(
 }
 
 createSisyphusJuniorAgentWithOverrides.mode = MODE
+
+export const sisyphusJuniorPromptMetadata: AgentPromptMetadata = {
+  category: "specialist",
+  cost: "EXPENSIVE",
+  promptAlias: "Sisyphus-Junior",
+  triggers: [
+    {
+      domain: "Category-based delegation",
+      trigger: "Delegated tasks via task(category=..., ...)",
+    },
+    {
+      domain: "Focused execution",
+      trigger: "Domain-specific task execution with category configuration",
+    },
+  ],
+  useWhen: [
+    "Tasks delegated via category parameter",
+    "Domain-specific work requiring category-specific model",
+    "Parallel task execution with category-specific configuration",
+  ],
+  avoidWhen: [
+    "Complex multi-agent orchestration (use Atlas or Sisyphus)",
+    "Tasks requiring exploration before implementation (use Hephaestus)",
+    "Simple single-step tasks (use quick category)",
+  ],
+  keyTrigger: "Category-based delegated task execution",
+};

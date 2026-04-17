@@ -11,8 +11,8 @@ import { createMultimodalLookerAgent, MULTIMODAL_LOOKER_PROMPT_METADATA } from "
 import { createMetisAgent, metisPromptMetadata } from "./metis"
 import { createAtlasAgent, atlasPromptMetadata } from "./atlas"
 import { createMomusAgent, momusPromptMetadata } from "./momus"
-import { createHephaestusAgent } from "./hephaestus"
-import { createSisyphusJuniorAgentWithOverrides } from "./sisyphus-junior"
+import { createHephaestusAgent, hephaestusPromptMetadata } from "./hephaestus"
+import { createSisyphusJuniorAgentWithOverrides, sisyphusJuniorPromptMetadata } from "./sisyphus-junior"
 import type { AvailableCategory } from "./dynamic-agent-prompt-builder"
 import {
   fetchAvailableModels,
@@ -56,6 +56,8 @@ const agentMetadata: Partial<Record<BuiltinAgentName, AgentPromptMetadata>> = {
   metis: metisPromptMetadata,
   momus: momusPromptMetadata,
   atlas: atlasPromptMetadata,
+  hephaestus: hephaestusPromptMetadata,
+  "sisyphus-junior": sisyphusJuniorPromptMetadata,
 }
 
 export async function createBuiltinAgents(

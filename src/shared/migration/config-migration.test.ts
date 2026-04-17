@@ -8,7 +8,12 @@ import { migrateConfigFile } from "./config-migration"
 import { getSidecarPath } from "./migrations-sidecar"
 
 const createdDirectories: string[] = []
-const MIGRATION_KEY = "model-version:anthropic/claude-opus-4-5->anthropic/claude-opus-4-7"
+
+// In the preference fork, model-version migrations were removed. The sidecar
+// pipeline is now driven exclusively by legacy `_migrations` entries left in
+// older configs (the BC path described in #3263). The tests below use that
+// path to exercise sidecar ordering, retry, and write-failure semantics.
+const LEGACY_MIGRATION_KEY = "model-version:openai/gpt-5.3-codex->openai/gpt-5.4"
 
 function createWorkdir(): string {
   const workdir = mkdtempSync(join(tmpdir(), "omo-config-migration-"))
@@ -17,10 +22,14 @@ function createWorkdir(): string {
 }
 
 function createLegacyConfig(): Record<string, unknown> {
+  // Legacy `_migrations` field forces the migrator to rewrite the file (to
+  // strip the field and persist it to the sidecar) without altering any
+  // user-chosen model values.
   return {
     agents: {
-      prometheus: { model: "anthropic/claude-opus-4-5" },
+      hephaestus: { model: "openai/gpt-5.3-codex" },
     },
+    _migrations: [LEGACY_MIGRATION_KEY],
   }
 }
 
@@ -45,20 +54,21 @@ describe("migrateConfigFile sidecar write ordering", () => {
     // then
     expect(needsWrite).toBe(true)
     expect(rawConfig._migrations).toBeUndefined()
-    expect((rawConfig.agents as Record<string, Record<string, unknown>>).prometheus.model).toBe(
-      "anthropic/claude-opus-4-7",
+    // User's model choice preserved — model-version rewriting removed
+    expect((rawConfig.agents as Record<string, Record<string, unknown>>).hephaestus.model).toBe(
+      "openai/gpt-5.3-codex",
     )
 
     const persistedConfig = JSON.parse(readFileSync(configPath, "utf-8")) as Record<string, unknown>
     expect(persistedConfig._migrations).toBeUndefined()
-    expect((persistedConfig.agents as Record<string, Record<string, unknown>>).prometheus.model).toBe(
-      "anthropic/claude-opus-4-7",
+    expect((persistedConfig.agents as Record<string, Record<string, unknown>>).hephaestus.model).toBe(
+      "openai/gpt-5.3-codex",
     )
 
     const sidecar = JSON.parse(readFileSync(getSidecarPath(configPath), "utf-8")) as {
       appliedMigrations: string[]
     }
-    expect(sidecar.appliedMigrations).toEqual([MIGRATION_KEY])
+    expect(sidecar.appliedMigrations).toEqual([LEGACY_MIGRATION_KEY])
   })
 
   test("skips the sidecar when the config write fails so the migration retries on next startup", () => {
@@ -73,7 +83,7 @@ describe("migrateConfigFile sidecar write ordering", () => {
     // then
     expect(firstAttemptNeedsWrite).toBe(true)
     expect(existsSync(getSidecarPath(configPath))).toBe(false)
-    expect(firstAttemptConfig._migrations).toEqual([MIGRATION_KEY])
+    expect(firstAttemptConfig._migrations).toEqual([LEGACY_MIGRATION_KEY])
 
     // given
     mkdirSync(join(workdir, "missing-parent"), { recursive: true })
@@ -86,8 +96,8 @@ describe("migrateConfigFile sidecar write ordering", () => {
     // then
     expect(retriedNeedsWrite).toBe(true)
     expect(retriedConfig._migrations).toBeUndefined()
-    expect((retriedConfig.agents as Record<string, Record<string, unknown>>).prometheus.model).toBe(
-      "anthropic/claude-opus-4-7",
+    expect((retriedConfig.agents as Record<string, Record<string, unknown>>).hephaestus.model).toBe(
+      "openai/gpt-5.3-codex",
     )
     expect(existsSync(getSidecarPath(configPath))).toBe(true)
   })
@@ -106,48 +116,17 @@ describe("migrateConfigFile sidecar write ordering", () => {
 
     // then
     expect(needsWrite).toBe(true)
-    expect(rawConfig._migrations).toEqual([MIGRATION_KEY])
-    expect((rawConfig.agents as Record<string, Record<string, unknown>>).prometheus.model).toBe(
-      "anthropic/claude-opus-4-7",
+    expect(rawConfig._migrations).toEqual([LEGACY_MIGRATION_KEY])
+    expect((rawConfig.agents as Record<string, Record<string, unknown>>).hephaestus.model).toBe(
+      "openai/gpt-5.3-codex",
     )
 
     const persistedConfig = JSON.parse(readFileSync(configPath, "utf-8")) as Record<string, unknown>
-    expect(persistedConfig._migrations).toEqual([MIGRATION_KEY])
-    expect((persistedConfig.agents as Record<string, Record<string, unknown>>).prometheus.model).toBe(
-      "anthropic/claude-opus-4-7",
+    expect(persistedConfig._migrations).toEqual([LEGACY_MIGRATION_KEY])
+    expect((persistedConfig.agents as Record<string, Record<string, unknown>>).hephaestus.model).toBe(
+      "openai/gpt-5.3-codex",
     )
     expect(statSync(getSidecarPath(configPath)).isDirectory()).toBe(true)
-  })
-
-  test("treats top-level appliedMigrations as migration history and does not reapply the model update", () => {
-    // given
-    const workdir = createWorkdir()
-    const configPath = join(workdir, "oh-my-openagent.json")
-    const rawConfig: Record<string, unknown> = {
-      agents: {
-        oracle: { model: "anthropic/claude-opus-4-6" },
-      },
-      appliedMigrations: ["model-version:anthropic/claude-opus-4-6->anthropic/claude-opus-4-7"],
-    }
-
-    writeFileSync(configPath, JSON.stringify(rawConfig, null, 2) + "\n")
-
-    // when
-    const needsWrite = migrateConfigFile(configPath, rawConfig)
-
-    // then
-    expect(needsWrite).toBe(true)
-    expect(rawConfig.appliedMigrations).toBeUndefined()
-    expect((rawConfig.agents as Record<string, Record<string, unknown>>).oracle.model).toBe(
-      "anthropic/claude-opus-4-6",
-    )
-
-    const sidecar = JSON.parse(readFileSync(getSidecarPath(configPath), "utf-8")) as {
-      appliedMigrations: string[]
-    }
-    expect(sidecar.appliedMigrations).toEqual([
-      "model-version:anthropic/claude-opus-4-6->anthropic/claude-opus-4-7",
-    ])
   })
 })
 
@@ -178,21 +157,17 @@ describe("migrateConfigFile backup skipping", () => {
   })
 
   test("creates backup when file content actually changes", () => {
-    // given - config with model that needs migration
+    // given - config with legacy _migrations field that needs to be stripped
     const workdir = createWorkdir()
     const configPath = join(workdir, "oh-my-opencode.json")
-    const rawConfig = {
-      agents: {
-        prometheus: { model: "anthropic/claude-opus-4-5" },
-      },
-    }
+    const rawConfig = createLegacyConfig()
 
     writeFileSync(configPath, JSON.stringify(rawConfig, null, 2) + "\n")
 
     // when
     const needsWrite = migrateConfigFile(configPath, rawConfig as Record<string, unknown>)
 
-    // then - backup should be created since content changed
+    // then - backup should be created since content changed (legacy field stripped)
     expect(needsWrite).toBe(true)
     const files = require("fs").readdirSync(workdir) as string[]
     const backupFiles = files.filter((f: string) => f.includes(".bak."))

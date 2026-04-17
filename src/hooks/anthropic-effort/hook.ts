@@ -96,15 +96,21 @@ export function createAnthropicEffortHook() {
         ;(message as { variant?: string }).variant = clamped
         log("anthropic-effort: clamped variant max→high", {
           sessionID: input.sessionID,
+          agent: agent?.name,
           provider: model.providerID,
           model: model.modelID,
           reason: constrained ? "constrained-provider" : "non-opus",
+          variant: message.variant,
+          effort: clamped,
         })
       } else {
         log("anthropic-effort: injected effort=max", {
           sessionID: input.sessionID,
+          agent: agent?.name,
           provider: model.providerID,
           model: model.modelID,
+          variant: message.variant,
+          effort: clamped,
         })
       }
     },
