@@ -6,6 +6,7 @@ import { createChatMessageHandler } from "./chat-message"
 import { _resetForTesting, setMainSession } from "../features/claude-code-session-state"
 import { createModelFallbackHook, clearPendingModelFallback } from "../hooks/model-fallback/hook"
 import * as connectedProvidersCache from "../shared/connected-providers-cache"
+import { SessionCategoryRegistry } from "../shared/session-category-registry"
 
 let readConnectedProvidersCacheSpy: { mockRestore: () => void } | undefined
 let readProviderModelsCacheSpy: { mockRestore: () => void } | undefined
@@ -62,6 +63,7 @@ describe("createEventHandler - model fallback", () => {
     readProviderModelsCacheSpy?.mockRestore()
     readConnectedProvidersCacheSpy = undefined
     readProviderModelsCacheSpy = undefined
+    SessionCategoryRegistry.clear()
     _resetForTesting()
   })
 
@@ -434,6 +436,193 @@ describe("createEventHandler - model fallback", () => {
       providerID: "quotio",
       modelID: "gpt-5.2",
     })
+    expect(output.message["variant"]).toBeUndefined()
+  })
+
+  test("suppresses hardcoded proactive fallback when the agent is explicitly configured without fallback_models", async () => {
+    //#given
+    const sessionID = "ses_status_retry_agent_config_without_fallback"
+    setMainSession(sessionID)
+    const modelFallback = createModelFallbackHook()
+    clearPendingModelFallback(modelFallback, sessionID)
+    const pluginConfig = {
+      agents: {
+        sisyphus: {
+          model: "quotio/claude-opus-4-6",
+        },
+      },
+    }
+
+    const { handler, abortCalls, promptCalls } = createHandler({ hooks: { modelFallback }, pluginConfig })
+
+    const chatMessageHandler = createChatMessageHandler({
+      ctx: {
+        client: {
+          tui: {
+            showToast: async () => ({}),
+          },
+        },
+      } as any,
+      pluginConfig: {} as any,
+      firstMessageVariantGate: {
+        shouldOverride: () => false,
+        markApplied: () => {},
+      },
+      hooks: {
+        modelFallback,
+        stopContinuationGuard: null,
+        keywordDetector: null,
+        claudeCodeHooks: null,
+        autoSlashCommand: null,
+        startWork: null,
+        ralphLoop: null,
+      } as any,
+    })
+
+    await handler({
+      event: {
+        type: "message.updated",
+        properties: {
+          info: {
+            id: "msg_user_status_agent_config_without_fallback",
+            sessionID,
+            role: "user",
+            time: { created: 1 },
+            content: [],
+            modelID: "claude-opus-4-6",
+            providerID: "quotio",
+            agent: "Sisyphus - Ultraworker",
+            path: { cwd: "/tmp", root: "/tmp" },
+          },
+        },
+      },
+    })
+
+    //#when
+    await handler({
+      event: {
+        type: "session.status",
+        properties: {
+          sessionID,
+          status: {
+            type: "retry",
+            attempt: 1,
+            message:
+              "All credentials for model claude-opus-4-6-thinking are cooling down [retrying in ~5 days attempt #1]",
+            next: 300,
+          },
+        },
+      },
+    })
+
+    const output = { message: {}, parts: [] as Array<{ type: string; text?: string }> }
+    await chatMessageHandler(
+      {
+        sessionID,
+        agent: "sisyphus",
+        model: { providerID: "quotio", modelID: "claude-opus-4-6" },
+      },
+      output,
+    )
+
+    //#then
+    expect(abortCalls).toEqual([])
+    expect(promptCalls).toEqual([])
+    expect(output.message["model"]).toBeUndefined()
+    expect(output.message["variant"]).toBeUndefined()
+  })
+
+  test("suppresses hardcoded proactive fallback when the configured session category has no fallback_models", async () => {
+    //#given
+    const sessionID = "ses_status_retry_category_config_without_fallback"
+    SessionCategoryRegistry.register(sessionID, "deep")
+    setMainSession(sessionID)
+    const modelFallback = createModelFallbackHook()
+    clearPendingModelFallback(modelFallback, sessionID)
+    const pluginConfig = {
+      categories: {
+        deep: {
+          model: "quotio/gpt-5.2",
+        },
+      },
+    }
+
+    const { handler, abortCalls, promptCalls } = createHandler({ hooks: { modelFallback }, pluginConfig })
+
+    const chatMessageHandler = createChatMessageHandler({
+      ctx: {
+        client: {
+          tui: {
+            showToast: async () => ({}),
+          },
+        },
+      } as any,
+      pluginConfig: {} as any,
+      firstMessageVariantGate: {
+        shouldOverride: () => false,
+        markApplied: () => {},
+      },
+      hooks: {
+        modelFallback,
+        stopContinuationGuard: null,
+        keywordDetector: null,
+        claudeCodeHooks: null,
+        autoSlashCommand: null,
+        startWork: null,
+        ralphLoop: null,
+      } as any,
+    })
+
+    await handler({
+      event: {
+        type: "message.updated",
+        properties: {
+          info: {
+            id: "msg_user_status_category_config_without_fallback",
+            sessionID,
+            role: "user",
+            time: { created: 1 },
+            content: [],
+            modelID: "claude-opus-4-6",
+            providerID: "quotio",
+            agent: "Sisyphus - Ultraworker",
+            path: { cwd: "/tmp", root: "/tmp" },
+          },
+        },
+      },
+    })
+
+    //#when
+    await handler({
+      event: {
+        type: "session.status",
+        properties: {
+          sessionID,
+          status: {
+            type: "retry",
+            attempt: 1,
+            message:
+              "All credentials for model claude-opus-4-6-thinking are cooling down [retrying in ~5 days attempt #1]",
+            next: 300,
+          },
+        },
+      },
+    })
+
+    const output = { message: {}, parts: [] as Array<{ type: string; text?: string }> }
+    await chatMessageHandler(
+      {
+        sessionID,
+        agent: "sisyphus",
+        model: { providerID: "quotio", modelID: "claude-opus-4-6" },
+      },
+      output,
+    )
+
+    //#then
+    expect(abortCalls).toEqual([])
+    expect(promptCalls).toEqual([])
+    expect(output.message["model"]).toBeUndefined()
     expect(output.message["variant"]).toBeUndefined()
   })
 

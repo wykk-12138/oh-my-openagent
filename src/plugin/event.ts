@@ -33,6 +33,7 @@ import { extractRetryAttempt, normalizeRetryStatusMessage } from "../shared/retr
 import { clearSessionModel, getSessionModel, setSessionModel } from "../shared/session-model-state";
 import { clearSessionPromptParams } from "../shared/session-prompt-params-state";
 import { deleteSessionTools } from "../shared/session-tools-store";
+import { SessionCategoryRegistry } from "../shared/session-category-registry";
 import { lspManager } from "../tools";
 import { dispatchOpenClawEvent } from "../openclaw/runtime-dispatch";
 
@@ -111,6 +112,29 @@ function extractProviderModelFromErrorMessage(message: string): { providerID?: s
 
   return {};
 }
+
+function hasExplicitConfiguredProactiveFallbackScope(
+  sessionID: string,
+  agentKey: string,
+  pluginConfig: OhMyOpenCodeConfig,
+): boolean {
+  const sessionCategory = SessionCategoryRegistry.get(sessionID);
+  if (sessionCategory && pluginConfig.categories?.[sessionCategory]) {
+    return true;
+  }
+
+  const agentConfig = pluginConfig.agents?.[agentKey as keyof NonNullable<OhMyOpenCodeConfig["agents"]>];
+  if (!agentConfig) {
+    return false;
+  }
+
+  if (agentConfig.category && pluginConfig.categories?.[agentConfig.category]) {
+    return true;
+  }
+
+  return true;
+}
+
 function applyUserConfiguredFallbackChain(
   modelFallback: Pick<ModelFallbackHook, "setSessionFallbackChain"> | null | undefined,
   sessionID: string,
@@ -120,7 +144,14 @@ function applyUserConfiguredFallbackChain(
 ): void {
   const agentKey = getAgentConfigKey(agentName);
   const rawFallbackModels = getRawFallbackModels(sessionID, agentKey, pluginConfig);
-  if (!rawFallbackModels || rawFallbackModels.length === 0) return;
+  if (!rawFallbackModels || rawFallbackModels.length === 0) {
+    if (hasExplicitConfiguredProactiveFallbackScope(sessionID, agentKey, pluginConfig)) {
+      if (modelFallback) {
+        setSessionFallbackChain(modelFallback, sessionID, []);
+      }
+    }
+    return;
+  }
 
   const fallbackChain = buildFallbackChainFromModels(rawFallbackModels, currentProviderID);
 
@@ -128,6 +159,11 @@ function applyUserConfiguredFallbackChain(
     if (modelFallback) {
       setSessionFallbackChain(modelFallback, sessionID, fallbackChain);
     }
+    return;
+  }
+
+  if (modelFallback) {
+    setSessionFallbackChain(modelFallback, sessionID, []);
   }
 }
 
