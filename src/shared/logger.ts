@@ -3,7 +3,8 @@ import * as path from "path"
 
 import { LOG_FILENAME } from "./plugin-identity"
 
-const logFile = path.join("C:\\Users\\wykk\\Desktop\\project\\oh-my-openagent\\log", LOG_FILENAME)
+const logFile = path.join("/Users/wykk/Projects/CLIProxyAPI/log/delegate-log", LOG_FILENAME)
+const LOGGING_ENABLED = false
 
 let buffer: string[] = []
 let flushTimer: ReturnType<typeof setTimeout> | null = null
@@ -30,6 +31,7 @@ function scheduleFlush(): void {
 }
 
 export function log(message: string, data?: unknown): void {
+  if (!LOGGING_ENABLED) return
   try {
     const timestamp = new Date().toISOString()
     const logEntry = `[${timestamp}] ${message} ${data ? JSON.stringify(data) : ""}\n`
